@@ -31,7 +31,7 @@
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/yourusername/crypto-trading-telegram-bot.git
+git clone https://github.com/nam11993/crypto-trading-telegram-bot.git
 cd crypto-trading-telegram-bot
 ```
 
