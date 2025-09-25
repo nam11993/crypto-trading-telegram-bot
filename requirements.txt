@@ -5,12 +5,20 @@ urllib3>=1.26.0
 # Binance API
 python-binance>=1.0.19
 
+# WebSocket for real-time streaming
+websocket-client>=1.6.0
+websockets>=11.0.3
+
 # Telegram Bot API  
 python-telegram-bot>=20.0
 
 # Data handling
 pandas>=2.0.0
 numpy>=1.24.0
+
+# Advanced analytics
+scipy>=1.10.0
+scikit-learn>=1.3.0
 
 # Configuration
 python-dotenv>=1.0.0
@@ -24,12 +32,18 @@ coloredlogs>=15.0
 
 # Async support
 aiohttp>=3.8.0
+asyncio-throttle>=1.0.0
 
 # Date/time handling
 pytz>=2023.3
 
+# Technical analysis
+ta>=0.10.2
+
+# Database improvements
+sqlalchemy>=2.0.0
+
 # Optional: For enhanced features
-# plotly>=5.15.0  # For charts
-# matplotlib>=3.7.0  # For plotting  
-# ta-lib>=0.4.26  # Technical analysis
+plotly>=5.15.0  # For charts - ENABLED
+matplotlib>=3.7.0  # For plotting - ENABLED
 # cryptography>=41.0.0  # Crypto utilities
