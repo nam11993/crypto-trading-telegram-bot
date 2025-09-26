@@ -20,6 +20,13 @@ from config.config import Config
 from binance_account import BinanceAccountChecker
 from price_tracker import PriceTracker
 
+try:
+    from src.price_alert_system import PriceAlertSystem
+    ALERT_SYSTEM_AVAILABLE = True
+except ImportError as e:
+    print(f"Alert system not available: {e}")
+    ALERT_SYSTEM_AVAILABLE = False
+
 # Config
 config = Config()
 BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
@@ -28,6 +35,16 @@ CHAT_ID = config.TELEGRAM_CHAT_ID
 # Global instances
 binance_checker = BinanceAccountChecker()
 price_tracker = PriceTracker()  # Price tracking instance
+
+# Initialize Alert System
+alert_system = None
+if ALERT_SYSTEM_AVAILABLE:
+    try:
+        alert_system = PriceAlertSystem(BOT_TOKEN, CHAT_ID)
+        print("✅ Alert system initialized successfully")
+    except Exception as e:
+        print(f"❌ Failed to initialize alert system: {e}")
+        alert_system = None
 
 # Setup logging
 logging.basicConfig(
@@ -46,33 +63,6 @@ status = {
     "profit": 0.0
 }
 
-async def send_chart_image(chat_id: str, image_path: str, caption: str = None):
-    """Send chart image to Telegram"""
-    try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-        
-        with open(image_path, 'rb') as photo:
-            files = {'photo': photo}
-            data = {'chat_id': chat_id}
-            if caption:
-                data['caption'] = caption
-            
-            response = requests.post(url, files=files, data=data, timeout=30)
-            response.raise_for_status()
-            logger.info(f"Chart image sent successfully: {image_path}")
-            
-            # Clean up the file after sending
-            try:
-                os.remove(image_path)
-                logger.info(f"Temporary chart file removed: {image_path}")
-            except Exception as e:
-                logger.warning(f"Could not remove temp file {image_path}: {e}")
-                
-    except Exception as e:
-        logger.error(f"Error sending chart image: {e}")
-        # Send error message instead
-        send_message(f"❌ Lỗi gửi chart image: {e}")
-
 def send_message(text, reply_keyboard=None):
     """Gửi tin nhắn đơn giản"""
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -87,6 +77,33 @@ def send_message(text, reply_keyboard=None):
     except Exception as e:
         print(f"❌ Lỗi: {e}")
         return None
+
+def send_chart_image(image_path: str, caption: str = None):
+    """Send chart image to Telegram"""
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+        
+        with open(image_path, 'rb') as photo:
+            files = {'photo': photo}
+            data = {'chat_id': CHAT_ID}
+            if caption:
+                data['caption'] = caption
+            
+            response = requests.post(url, files=files, data=data, timeout=30)
+            response.raise_for_status()
+            print(f"✅ Chart sent: {image_path}")
+            
+            # Clean up temp file
+            try:
+                os.remove(image_path)
+                print(f"🗑️ Removed: {image_path}")
+            except:
+                pass
+                
+        return True
+    except Exception as e:
+        print(f"❌ Chart error: {e}")
+        return False
 
 def get_updates(offset=0):
     """Lấy updates"""
@@ -106,6 +123,7 @@ def create_keyboard():
             ["📊 Status", "📈 Stats"],
             ["💼 Account", "💰 Balance"],
             ["💹 Prices", "📈 Chart"],  # Nút mới cho giá và chart
+            ["🚨 Alerts", "📊 Alert Stats"],  # Alert buttons
             ["▶️ Start", "⏹️ Stop"],
             ["🟢 BUY", "🔴 SELL"],
             ["⚙️ Settings", "🆘 Help"]
@@ -227,25 +245,90 @@ ${portfolio.get('total_value_usdt', 0):.2f} USDT
         return response
     
     elif text == "📈 Chart":
-        # Show BTC candlestick chart as default
-        chart = price_tracker.generate_candlestick_chart('BTCUSDT', '1h', 20)
-        response = f"""�️ CANDLESTICK CHART VIEWER
+        # Generate PNG chart với educational caption
+        try:
+            from src.binance_chart import BinanceLikeChart
+            chart_gen = BinanceLikeChart()
+            
+            caption = """📈 BTC/USDT CANDLESTICK CHART
 
-{chart}
+�️ HƯỚNG DẪN ĐỌC NẾN:
+🟢 Xanh lá (Bullish): Giá đóng > giá mở
+🔴 Đỏ (Bearish): Giá đóng < giá mở
+📏 Thân nến: Khoảng cách open-close
+📐 Bóng trên: High - max(open,close)
+📐 Bóng dưới: min(open,close) - Low
 
-💡 CÁCH SỬ DỤNG:
-• Gửi tên coin để xem candlestick chart (VD: ETH, BTC, ADA)
-• Chart nến như Binance với OHLC + Volume
-• Phân tích trend tự động (UPTREND/DOWNTREND/SIDEWAYS)
-• Resistance/Support levels
-• Hỗ trợ {len(price_tracker.symbols)} cặp coin chính
+📊 Patterns cơ bản:
+• Nến dài xanh: Áp lực mua mạnh
+• Nến dài đỏ: Áp lực bán mạnh
+• Doji (thân ngắn): Thị trường do dự
+• Hammer: Tín hiệu đảo chiều tăng
 
-📊 Coins có sẵn: BTC, ETH, ADA, DOT, LINK, BNB, SOL, MATIC, AVAX, ATOM, XRP, LTC, UNI, SUSHI, AAVE
-
-🕯️ Thử gửi: "ETH 4h" cho timeframe 4 giờ!"""
-        return response
+� Gửi tên coin: ETH, BNB, ADA..."""
+            
+            image_path = chart_gen.generate_professional_chart('BTCUSDT', '4h')
+            send_chart_image(image_path, caption)
+            return None  # Không trả về text response
+        except Exception as e:
+            return f"❌ Lỗi: {e}"
     
-    elif text == "📈 Stats":
+    elif text == "� Alerts":
+        if alert_system:
+            return """🚨 PRICE ALERT SYSTEM
+
+📊 Commands:
+• "start alerts" - Bật monitoring
+• "stop alerts" - Tắt monitoring  
+• "alert stats" - Xem thống kê
+
+⚠️ Settings:
+• Pump: +15% trong 5 phút
+• Dump: -15% trong 5 phút
+• Monitor: Top 100 coins
+• Updates: Realtime"""
+        else:
+            return "❌ Alert system không khả dụng"
+    
+    elif text == "📊 Alert Stats" or text.lower() == "alert stats":
+        if alert_system:
+            stats = alert_system.get_alert_stats()
+            return f"""📊 ALERT STATISTICS
+
+🔔 Total: {stats.get('total_alerts', 0)}
+🟢 Pumps: {stats.get('pump_alerts', 0)}  
+🔴 Dumps: {stats.get('dump_alerts', 0)}
+⏰ Last: {stats.get('last_alert', 'None')}
+🟢 Status: {'Running' if stats.get('is_running', False) else 'Stopped'}
+📊 Monitored: {stats.get('monitored_pairs', 0)}"""
+        else:
+            return "❌ Alert system không khả dụng"
+    
+    elif text.lower() == "start alerts":
+        if alert_system:
+            try:
+                # Start monitoring in background thread
+                import threading
+                thread = threading.Thread(target=lambda: asyncio.run(alert_system.start_monitoring()))
+                thread.daemon = True
+                thread.start()
+                return "🟢 Alert system started!"
+            except Exception as e:
+                return f"❌ Lỗi: {e}"
+        else:
+            return "❌ Alert system không khả dụng"
+    
+    elif text.lower() == "stop alerts":
+        if alert_system:
+            try:
+                alert_system.stop_monitoring()
+                return "🛑 Alert system stopped!"
+            except Exception as e:
+                return f"❌ Lỗi: {e}"
+        else:
+            return "❌ Alert system không khả dụng"
+            
+    elif text == "�📈 Stats":
         response = f"""📈 TRADING STATISTICS với PRICE DATA
 
 🎯 PERFORMANCE:
@@ -439,38 +522,42 @@ Nhấn Start để tiếp tục."""
             if timeframe not in supported_timeframes:
                 timeframe = '1h'  # Default to 1h
             
-            # Generate candlestick chart for requested coin
-            chart = price_tracker.generate_candlestick_chart(symbol + 'USDT', timeframe, 20)
-            price_data = price_tracker.get_price_by_symbol(symbol + 'USDT')
-            
-            if price_data:
-                timeframe_name = {
-                    '1m': '1 Phút', '5m': '5 Phút', '15m': '15 Phút',
-                    '1h': '1 Giờ', '4h': '4 Giờ', '1d': '1 Ngày'
-                }.get(timeframe, timeframe)
+            # Generate PNG chart với educational caption
+            try:
+                from src.binance_chart import BinanceLikeChart
+                chart_gen = BinanceLikeChart()
+                price_data = price_tracker.get_price_by_symbol(symbol + 'USDT')
                 
-                response = f"""�️ {symbol} CANDLESTICK ANALYSIS - {timeframe_name}
+                if price_data:
+                    timeframe_name = {
+                        '1m': '1 Phút', '5m': '5 Phút', '15m': '15 Phút',
+                        '1h': '1 Giờ', '4h': '4 Giờ', '1d': '1 Ngày'
+                    }.get(timeframe, timeframe)
+                    
+                    caption = f"""📈 {symbol}/USDT - {timeframe_name}
 
-{chart}
+💰 Giá: ${price_data['price']:.4f}
+📊 24h: {price_data['change_percent']:+.2f}% {price_data['emoji']}
+📈 Vol: {price_tracker._format_volume(price_data['volume'])}
 
-💰 QUICK STATS:
-• Current Price: ${price_data['price']:.4f}
-• 24h Change: {price_data['change_percent']:+.2f}% {price_data['emoji']}
-• 24h Volume: {price_tracker._format_volume(price_data['volume'])}
+🕯️ HƯỚNG DẪN NẾN:
+🟢 Nến xanh: Giá đóng > mở (Bullish)
+🔴 Nến đỏ: Giá đóng < mở (Bearish)
+📏 Thân nến: Độ chênh open-close
+📐 Bóng trên/dưới: High-Low range
 
-⏰ TIMEFRAMES:
-• 1m, 5m, 15m - Short-term scalping
-• 1h, 4h - Swing trading (recommended)  
-• 1d - Long-term analysis
-
-💡 Thử: "{symbol} 4h" hoặc "{symbol} 15m" cho timeframes khác!"""
-            else:
-                response = f"""❌ Không thể lấy dữ liệu cho {symbol}
-
-💡 Thử các coin: {', '.join(supported_coins[:10])}
-⏰ Với timeframe: {', '.join(supported_timeframes)}"""
-                
-            return response
+💡 Patterns:
+• Nến dài: Momentum mạnh
+• Doji: Do dự
+• Hammer: Đảo chiều"""
+                    
+                    image_path = chart_gen.generate_professional_chart(symbol + 'USDT', timeframe)
+                    send_chart_image(image_path, caption)
+                    return None  # Chỉ gửi ảnh, không có text response
+                else:
+                    return f"❌ Không có dữ liệu {symbol}"
+            except Exception as e:
+                return f"❌ Lỗi chart {symbol}: {e}"
         
         else:
             response = f"""👋 Chào {user_name}!
@@ -483,7 +570,7 @@ Bạn gửi: "{text}"
 • Hoặc sử dụng các nút dưới chat để điều khiển bot!
 
 🕯️ CANDLESTICK CHARTS:
-� Coins: {', '.join(supported_coins[:8])}...
+💎 Coins: {', '.join(supported_coins[:8])}...
 ⏰ Timeframes: {', '.join(supported_timeframes)}
 
 💹 Nhấn nút "💹 Prices" để xem market overview!"""
@@ -537,12 +624,15 @@ Gửi /start để xem hướng dẫn chi tiết!
                             # Xử lý tin nhắn
                             response = handle_message(text, user_name)
                             
-                            # Gửi phản hồi với keyboard
-                            result = send_message(response, create_keyboard())
-                            if result and result.get("ok"):
-                                print(f"✅ Đã trả lời {user_name}")
+                            # Gửi phản hồi với keyboard (nếu có response)
+                            if response:
+                                result = send_message(response, create_keyboard())
+                                if result and result.get("ok"):
+                                    print(f"✅ Đã trả lời {user_name}")
+                                else:
+                                    print(f"❌ Lỗi: {result}")
                             else:
-                                print(f"❌ Lỗi: {result}")
+                                print(f"📊 Đã gửi chart cho {user_name}")
             
             time.sleep(1)
             
